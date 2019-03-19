@@ -12,7 +12,7 @@ class BaseScene extends Phaser.Scene {
 		this.load.tilemapTiledJSON(this.tileDataKey, this.tileDataSource);
 		this.load.image('background', 'assets/environment/background.png');
 		this.load.image('midground', 'assets/environment/middleground.png');
-		this.load.image('tileset', 'assets/tiles/tileset.png');
+		this.load.image('tileset', 'assets/tileset.png');
 		this.load.spritesheet(
 			'player-idle',
 			'assets/sprites/player/idle.png', {
@@ -66,7 +66,16 @@ class BaseScene extends Phaser.Scene {
 				margin: 0,
 				spacing: 0
 			}
-		)
+        )
+        this.load.spritesheet(
+            'largeBlocks',
+            'assets/environment/largeBlocks.png', {
+                frameWidth: 32,
+                frameHeight: 32,
+                margin: 0,
+                spacing: 0
+            }
+        )
 
 		// TODO make UI buttons into spritesheet
         this.load.image('leftBTN', 'assets/sprites/ui/leftBTN.png');
@@ -97,8 +106,8 @@ class BaseScene extends Phaser.Scene {
 		this.collisionLayer.setCollisionBetween(0, 1000);
 
 		// destructibles layer
-		var destructibleLayer = this.map.createDynamicLayer('destructibles', tileset, 0, 0);
-		destructibleLayer.setCollisionByProperty({ collides: true });
+		this.destructibleLayer = this.map.createDynamicLayer('destructibles', tileset, 0, 0);
+		this.destructibleLayer.setCollisionByProperty({ collides: true });
 
 		this.map.createStaticLayer('decoration', tileset, 0, 0);
 
@@ -120,13 +129,13 @@ class BaseScene extends Phaser.Scene {
 
 		// enemies (elemental)
 		fireElementals = this.physics.add.staticGroup();
-		this.map.findObject('items', function(enemy) {
-			if (enemy.type === 'elemental') {
-				if (enemy.name === 'fire') {
-					fireElementals.create(enemy.x + 8, enemy.y - 8, 'fireElemental');
-				}
-			}
-		})
+        this.map.findObject('items', function (enemy) {
+            if (enemy.type === 'elemental') {
+                if (enemy.name === 'fire') {
+                    fireElementals.create(enemy.x + 8, enemy.y - 8, 'fireElemental');
+                }
+            }
+        });
 		this.createEnemyAnims();
 
 		// extras
@@ -137,22 +146,31 @@ class BaseScene extends Phaser.Scene {
 			}
 		});
 
-		var portalSpawn = this.map.findObject('items', function(object) {
-			if (object.name === 'ending') {
-				return object;
-			}
-		})
+        portals = this.physics.add.staticGroup();
+        this.map.findObject('items', function (object) {
+            if (object.name === 'portal') {
+                portals.create(object.x + 8, object.y - 8, 'portal');
+            }
+        });
+        this.createPortalAnims();
 
 		keys = this.physics.add.staticGroup();
-		this.map.findObject('items', function(object) {
-			if (object.type === 'key') {
-				keys.create(object.x + 8, object.y - 8, 'abilities', 4);
-			}
-		})
+        this.map.findObject('items', function (object) {
+            if (object.type === 'key') {
+                keys.create(object.x + 8, object.y - 8, 'abilities', 4);
+            }
+        });
 
-		// TODO get portal set up
-		//this.portal = this.physics.add.sprite(this.portalSpawn.x + 13, portalSpawn.y - 15, 'portal');
-		console.log(portalSpawn);
+        largeBlocks = this.physics.add.staticGroup();
+        this.map.findObject('items', function (object) {
+            if (object.type === 'largeBlock') {
+                if (object.name === 'bull') {
+                    largeBlocks.create(object.x + 8, object.y - 8, 'largeBlocks', 0);
+                } else if (object.name === 'plain') {
+                    largeBlocks.create(object.x + 8, object.y - 8, 'largeBlocks', 1);
+                }
+            }
+        });
 
 		// player
 		var playerSpawn = this.map.findObject('player', function(object) {
@@ -162,8 +180,6 @@ class BaseScene extends Phaser.Scene {
 		});
 		
 		this.player = new Player(this, playerSpawn.x, playerSpawn.y, 'player-idle', 0);
-		// TODO fix collision with destructible layer
-		//this.player.enableCollision(this.destructibleLayer);
 
 		// camera
 		var camera = this.cameras.main;
@@ -179,7 +195,6 @@ class BaseScene extends Phaser.Scene {
             velocityX: 150,
             maxSize: 10
         });
-		// TODO fix so that anims are created for scene B as well (key already in use?)
 		this.createSparkAnims();
 
         // buttons
@@ -187,7 +202,7 @@ class BaseScene extends Phaser.Scene {
         this.createButtons();
 
 		// inventory
-		inventoryImage = this.add.image(config.width / 2 + 110, config.height / 2 - 40, 'abilities', 0).setScrollFactor(0);
+		inventoryImage = this.add.image(config.width / 2 + 110, config.height / 2 - 55, 'abilities', 0).setScrollFactor(0);
 
         // collisions
 		this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
@@ -225,19 +240,32 @@ class BaseScene extends Phaser.Scene {
 			spark.disableBody(true, true);
 		})
 
-		//elementals hurting player
-		this.physics.add.overlap(this.player.bunny, fireElementals, function() {
-			// TODO restart scene here
-			console.log('restart scene');
-		})
+		// elementals hurting player
+        this.physics.add.overlap(this.player.bunny, fireElementals, this.restartScene, null, this);
 
-		this.physics.add.overlap(this.sparks, this.destructibleLayer, this.sparkHitWall);
+        // player unlock blocks
+        this.physics.add.collider(this.player.bunny, this.destructibleLayer);
+
+        this.physics.add.collider(this.player.bunny, largeBlocks, function (player, block) {
+            if (inventory.includes('key')) {
+                inventory.pop();
+                block.disableBody(true, true);
+            }
+        })
+
+        // start next level
+        this.physics.add.collider(this.player.bunny, portals, this.switchScene, null, this);
+
+        this.input.addPointer();
+        this.input.addPointer();
+
         this.physics.world.on('worldbounds', this.killSpark, this)
 	}
 
 	update(time, delta) {
 		this.player.update();
-		fireElementals.playAnimation('fireAnims', true);
+        fireElementals.playAnimation('fireAnims', true);
+        portals.playAnimation('portal', true);
 		this.checkInventory();
 	}
 
@@ -261,8 +289,7 @@ class BaseScene extends Phaser.Scene {
 				}
 				spark.setActive(true);
 				spark.setVisible(true);
-				const destructLayer = this.map.getLayer('destructibles').tilemapLayer;
-				this.physics.add.collider(spark, destructLayer, this.sparkHitWall, null, this);
+				this.physics.add.collider(spark, this.destructibleLayer, this.sparkHitWall, null, this);
 				this.time.delayedCall(2500, this.killSpark, [spark.body], this);
 			}
 		}
@@ -273,43 +300,28 @@ class BaseScene extends Phaser.Scene {
     }
 
 	sparkHitWall(spark, tile) {
-		// TODO kill spark on impact
-		const destructibleLayer = this.map.getLayer("destructibles").tilemapLayer;
-		var index = tile.index + 1;
-		var tileProperties = destructibleLayer.tileset[0].tileProperties[index - 1];
+		var tileProperties = this.destructibleLayer.tileset[0].tileProperties[tile.index];
 		var checkCollision = false;
 		if (tileProperties) {
 			if (tileProperties.collides) {
 				checkCollision = true;
 			}
 		}
-
 		// killed by anything
-		if (tile.index === 149) {
-			console.log('plain');
-			const newTile = destructibleLayer.putTileAt(152, tile.x, tile.y);
-			newTile.setCollision(false);
-		}
+        if (tile.index === 149) {
+            const newTile = this.destructibleLayer.putTileAt(152, tile.x, tile.y);
+            newTile.setCollision(false);
+        }
+        // killed by fire
+        else if (tile.index === 24 || tile.index === 4 || tile.index === 6) {
+            if (inventory.includes('fire')) {
+                const newTile = this.destructibleLayer.putTileAt(152, tile.x, tile.y);
+                newTile.setCollision(false);
+            }
+        }
 
-		// killed by fire
-		else if (tile.index === 24 || tile.index === 4 || tile.index === 6) {
-			if (inventory.includes('fire')) {
-				const newTile = destructibleLayer.putTileAt(152, tile.x, tile.y);
-				newTile.setCollision(false);
-			}
-			console.log('wooden');
-		}
-
-		// locked (bull)
-		else if (tile.index === 221 || tile.index === 201 || tile.index === 222 || tile.index === 202) {
-			console.log('bull block');
-		}
-
-		// locked (plain)
-		else if (tile.index === 224 || tile.index === 225 || tile.index === 204 || tile.index === 205) {
-			console.log('plain block');
-		}
-	}
+        this.killSpark(spark.body);
+    }
 
 	// functions to keep track of inventory
 	checkInventory() {
@@ -340,14 +352,7 @@ class BaseScene extends Phaser.Scene {
 		})
 	}
 
-	// TODO fix this call - won't run within overlap functions
 	dropItem() {
-		/* TODO fix this -- keep track of last item in inventory to put it back in the world
-		if (inventory.includes('fire')) {
-			var previous = fireAbilities.getFirstDead(this.player.bunny.x - 10, this.player.bunny.y - 10);
-			previous.enableBody(false, this.player.bunny.x - 10, this.player.bunny.y - 10, true, true);
-		}
-		*/
 		inventory.pop();
 	}
 
@@ -355,7 +360,7 @@ class BaseScene extends Phaser.Scene {
 	// additional create functions
 	createButtons() {
         // left button
-        var leftButton = this.add.image(config.width / 2 - 110, config.height / 2 + 40, 'leftBTN').setScrollFactor(0);
+        var leftButton = this.add.image(config.width / 2 - 110, config.height / 2 + 55, 'leftBTN').setScrollFactor(0);
         leftButton.setInteractive();
         leftButton.on('pointerdown', function () {
 			if (! paused) {
@@ -369,7 +374,7 @@ class BaseScene extends Phaser.Scene {
         }, this);
 
         // right button
-        var rightButton = this.add.image(config.width / 2 - 80, config.height / 2 + 40, 'rightBTN').setScrollFactor(0);
+        var rightButton = this.add.image(config.width / 2 - 80, config.height / 2 + 55, 'rightBTN').setScrollFactor(0);
         rightButton.setInteractive();
         rightButton.on('pointerdown', function () {
 			if (! paused) {
@@ -383,12 +388,12 @@ class BaseScene extends Phaser.Scene {
         }, this);
 
         // shoot button
-        var shootButton = this.add.image(config.width / 2 + 110, config.height / 2 + 15, 'shootBTN').setScrollFactor(0);
+        var shootButton = this.add.image(config.width / 2 + 110, config.height / 2 + 30, 'shootBTN').setScrollFactor(0);
         shootButton.setInteractive();
         shootButton.on('pointerdown', this.shoot, this);
 
         // jump button
-        var jumpButton = this.add.image(config.width / 2 + 110, config.height / 2 + 40, 'jumpBTN').setScrollFactor(0);
+        var jumpButton = this.add.image(config.width / 2 + 110, config.height / 2 + 55, 'jumpBTN').setScrollFactor(0);
         jumpButton.setInteractive();
         jumpButton.on('pointerdown', function () {
 			if (! paused) {
@@ -402,7 +407,7 @@ class BaseScene extends Phaser.Scene {
         }, this);
 
         // inventory button
-        var inventoryButton = this.add.image(config.width / 2 + 110, config.height / 2 - 40, 'inventoryBTN', 0).setScrollFactor(0);
+        var inventoryButton = this.add.image(config.width / 2 + 110, config.height / 2 - 55, 'inventoryBTN', 0).setScrollFactor(0);
         inventoryButton.setInteractive();
         inventoryButton.on('pointerdown', function () {
 			if (! paused) {
@@ -411,7 +416,7 @@ class BaseScene extends Phaser.Scene {
 		}, this );
 
 		// pause button
-		var pauseButton = this.add.image(config.width / 2 - 110, config.height / 2 - 40, 'pauseBTN').setScrollFactor(0);
+		var pauseButton = this.add.image(config.width / 2 - 110, config.height / 2 - 55, 'pauseBTN').setScrollFactor(0);
 		var pausedText = this.add.image(config.width / 2, config.height / 2, 'paused').setScrollFactor(0).setVisible(false);
 		pauseButton.setInteractive();
 		pauseButton.on('pointerdown', function() {
@@ -429,7 +434,7 @@ class BaseScene extends Phaser.Scene {
 		}, this);
 
 		// restart button
-		var restartButton = this.add.image(config.width / 2 - 80, config.height / 2 - 40, 'restartBTN').setScrollFactor(0);
+		var restartButton = this.add.image(config.width / 2 - 80, config.height / 2 - 55, 'restartBTN').setScrollFactor(0);
 		restartButton.setInteractive();
 		restartButton.on('pointerdown', function() {
 			this.scene.start(this.id);
@@ -475,8 +480,17 @@ class BaseScene extends Phaser.Scene {
 			frameRate: 7,
 			repeat: -1
 		})
-	}
+    }
 
+    createPortalAnims() {
+        this.anims.create({
+            key: 'portal',
+            frames: this.anims.generateFrameNumbers('portal', { start: 0, end: 2 }),
+            frameRate: 7,
+            repeat: -1
+        })
+    }
+    
 	// function for switching scenes
 	switchScene() {
 		switch(this.id) {
@@ -487,14 +501,18 @@ class BaseScene extends Phaser.Scene {
 				this.scene.start('sceneA');
 				break;
 		}
-	}
+    }
+
+    restartScene() {
+        this.scene.start(this.id);
+    }
 }
 
 class SceneA extends BaseScene {
 	constructor() {
 		super('sceneA');
 		this.tileDataKey = 'level1';
-		this.tileDataSource = 'assets/tiles/level1.json';
+		this.tileDataSource = 'assets/level1.json';
 	}
 
 	preload() {
@@ -512,9 +530,9 @@ class SceneA extends BaseScene {
 
 class SceneB extends BaseScene {
 	constructor() {
-		super('sceneB');
-		this.tileDataKey = 'level2';
-		this.tileDataSource = 'assets/tiles/level2.json';
+        super('sceneB');
+        this.tileDataKey = 'level2';
+        this.tileDataSource = 'assets/level2.json';
 	}
 
 	preload() {

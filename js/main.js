@@ -3,7 +3,7 @@
 var config = {
 	type: Phaser.AUTO,
 	width: 16 * 16 * 2, // tilesize * aspect ratio * zoom
-	height: 16 * 7 * 2,
+	height: 16 * 9 * 2,
 
 	scene: [SceneA, SceneB],
 
@@ -33,6 +33,8 @@ var springs, keys;
 var fireAbilities, waterAbilities, electricAbilities;
 var fireElementals;
 var paused;
+var largeBlocks;
+var portals;
 
 function resize() {
     var canvas = document.querySelector("canvas");
